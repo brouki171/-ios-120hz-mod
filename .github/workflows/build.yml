@@ -25,10 +25,10 @@ jobs:
         uses: geode-sdk/build-geode-mod@main
         with:
           target: ${{ matrix.target }}
-          prescribed: true
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
+        sdk: latest
         with:
           name: iOS-120Hz-Mod
           path: build-*/
