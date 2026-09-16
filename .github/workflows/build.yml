@@ -31,3 +31,7 @@ jobs:
           name: iOS-120Hz-Mod
           path: ${{ steps.build.outputs.build-output }}
           if-no-files-found: error
+      - name: Check iOS dylib
+        run: |
+          find . -name "*.ios.dylib" -exec file {} \;
+          find . -name "*.ios.dylib" -exec lipo -info {} \;
