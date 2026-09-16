@@ -35,3 +35,4 @@ jobs:
         run: |
           find . -name "*.ios.dylib" -exec file {} \;
           find . -name "*.ios.dylib" -exec lipo -info {} \;
+          otool -L ./build/user.ios120hz.ios.dylib
