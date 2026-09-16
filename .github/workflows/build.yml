@@ -18,6 +18,7 @@ jobs:
             target: iOS
 
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,10 +26,10 @@ jobs:
         uses: geode-sdk/build-geode-mod@main
         with:
           target: ${{ matrix.target }}
+          sdk: latest
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
-        sdk: latest
         with:
           name: iOS-120Hz-Mod
           path: build-*/
