@@ -1,22 +1,35 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/AppDelegate.hpp>
-#include <objc/runtime.h>
+#include <Geode/modify/CCDirector.hpp>
+
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 
 using namespace geode::prelude;
 
-// Hook into AppDelegate to modify display link
+// Force Geometry Dash's main display link to prefer 120 Hz.
+static void configure120HzDisplayLink(CADisplayLink* displayLink) {
+    if (!displayLink) {
+        return;
+    }
+
+    if (@available(iOS 15.0, *)) {
+        displayLink.preferredFrameRateRange =
+            CAFrameRateRangeMake(120.0, 120.0, 120.0);
+    } else {
+        displayLink.preferredFramesPerSecond = 120;
+    }
+}
+
+// Hook into AppDelegate.
 class $modify(iOS120HzAppDelegate, AppDelegate) {
     bool applicationDidFinishLaunching() {
-        // Call original
         if (!AppDelegate::applicationDidFinishLaunching()) {
             return false;
         }
 
         log::info("[iOS120Hz] Initializing 120Hz support...");
 
-        // Get the key window's display link
         UIApplication* app = [UIApplication sharedApplication];
         UIWindow* keyWindow = nil;
 
@@ -32,49 +45,39 @@ class $modify(iOS120HzAppDelegate, AppDelegate) {
         }
 
         if (keyWindow) {
-            // Force 120Hz on the screen
             UIScreen* screen = keyWindow.screen;
-            if (@available(iOS 15.0, *)) {
-                CAFrameRateRange frameRateRange = CAFrameRateRangeMake(80, 120, 120);
 
-                // Find and modify the display link
-                [[NSNotificationCenter defaultCenter]
-                    addObserverForName:CADisplayLinkDidRefreshNotification
-                    object:nil
-                    queue:[NSOperationQueue mainQueue]
-                    usingBlock:^(NSNotification *notification) {
-                        CADisplayLink* displayLink = notification.object;
-                        if (displayLink) {
-                            displayLink.preferredFrameRateRange = frameRateRange;
-                        }
-                    }];
-            } else if (@available(iOS 10.0, *)) {
-                // Fallback for older iOS
-                [[NSNotificationCenter defaultCenter]
-                    addObserverForName:CADisplayLinkDidRefreshNotification
-                    object:nil
-                    queue:[NSOperationQueue mainQueue]
-                    usingBlock:^(NSNotification *notification) {
-                        CADisplayLink* displayLink = notification.object;
-                        if (displayLink) {
-                            displayLink.preferredFramesPerSecond = 120;
-                        }
-                    }];
+            if (@available(iOS 15.0, *)) {
+                log::info(
+                    "[iOS120Hz] Device maximum frame rate: {}Hz",
+                    screen.maximumFramesPerSecond
+                );
             }
 
-            log::info("[iOS120Hz] Display link configured for 120Hz");
+            // Create a display link that runs on the main run loop.
+            CADisplayLink* displayLink =
+                [CADisplayLink displayLinkWithTarget:keyWindow
+                                             selector:@selector(iOS120Hz_tick:)];
+
+            if (displayLink) {
+                configure120HzDisplayLink(displayLink);
+
+                [displayLink addToRunLoop:[NSRunLoop mainRunLoop]
+                                  forMode:NSDefaultRunLoopMode];
+
+                log::info("[iOS120Hz] Display link configured for 120Hz");
+            }
         }
 
         return true;
     }
 };
 
-// Hook CCDirector to modify the animation interval
+// Hook CCDirector to force the game animation interval to 120 FPS.
 class $modify(iOS120HzDirector, CCDirector) {
     void setAnimationInterval(double interval) {
-        // Force 120Hz (8.333ms = 1/120)
         CCDirector::setAnimationInterval(1.0 / 120.0);
-        log::debug("[iOS120Hz] Animation interval set to 120Hz");
+        log::debug("[iOS120Hz] Animation interval forced to 120Hz");
     }
 
     void setNextDeltaTimeZero(bool nextDeltaTimeZero) {
@@ -82,59 +85,24 @@ class $modify(iOS120HzDirector, CCDirector) {
     }
 };
 
-// Hook into the view controller to set preferred refresh rate
-@interface GeometryDashViewController : UIViewController
-@end
-
-@implementation GeometryDashViewController (iOS120Hz)
-
-+ (void)load {
-    Method original = class_getInstanceMethod(self, @selector(viewDidLoad));
-    Method swizzled = class_getInstanceMethod(self, @selector(ios120hz_viewDidLoad));
-    method_exchangeImplementations(original, swizzled);
-}
-
-- (void)ios120hz_viewDidLoad {
-    [self ios120hz_viewDidLoad]; // Call original
-
-    if (@available(iOS 15.0, *)) {
-        // Set preferred frame rate range for Metal/CAMetalLayer
-        CAFrameRateRange frameRateRange = CAFrameRateRangeMake(80, 120, 120);
-
-        // For MTKView/CAMetalLayer
-        for (CALayer* layer in self.view.layer.sublayers) {
-            if ([layer isKindOfClass:[CAMetalLayer class]]) {
-                CAMetalLayer* metalLayer = (CAMetalLayer*)layer;
-                // Set display link for this layer
-                CADisplayLink* displayLink = [self.view displayLinkWithTarget:self selector:@selector(ios120hz_update:)];
-                if (displayLink) {
-                    displayLink.preferredFrameRateRange = frameRateRange;
-                    [displayLink addToRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-                }
-            }
-        }
-    }
-}
-
-- (void)ios120hz_update:(CADisplayLink*)displayLink {
-    // Empty update handler - actual rendering is handled by Cocos2d-x
-}
-
-@end
-
-// Settings for the mod
-// Include a minimal settings implementation
+// Mod initialization.
 $on_mod(Loaded) {
     log::info("[iOS120Hz] Mod loaded - 120Hz support enabled");
 
-    // Check if device supports ProMotion
     UIScreen* mainScreen = [UIScreen mainScreen];
+
     if (@available(iOS 15.0, *)) {
-        float maxFPS = mainScreen.maximumFramesPerSecond;
-        log::info("[iOS120Hz] Device maximum frame rate: {}Hz", maxFPS);
+        NSInteger maxFPS = mainScreen.maximumFramesPerSecond;
+
+        log::info(
+            "[iOS120Hz] Device maximum frame rate: {}Hz",
+            maxFPS
+        );
 
         if (maxFPS < 120) {
-            log::warn("[iOS120Hz] Device does not support 120Hz ProMotion display");
+            log::warn(
+                "[iOS120Hz] Device does not support a 120Hz display"
+            );
         }
     }
 }
